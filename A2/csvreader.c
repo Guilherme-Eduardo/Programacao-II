@@ -26,7 +26,8 @@ int main(int argc, char **argv) {
     
     if (!csv){
         fprintf (stderr, "Erro ao abrir ao arquivo\n");
-        return 0;    }    
+        return 0;
+    }    
 
     while (menu != 9) {
         menu = menuPrincipal ();
@@ -52,17 +53,14 @@ int main(int argc, char **argv) {
             case DADOS_FALTANTES:
                 DadosFaltantes(csv);
                 break;
-            case SALVAR_DADOS:
+           /*case SALVAR_DADOS:
                 salvarDados(csv);
-                break;
+                break;*/
             case FIM:
+                deletaCsv(csv);
                 break;
         }
-    }   
-    
-    //destroiTabela (tab, numLinha);
-    //encerra arquivo;
-    
+    }    
     return 0;
 }
        

@@ -57,6 +57,39 @@ struct arq_csv *abreArquivoCsv(char *nome) {
     return csv;
 }
 
+void deletaCsv(struct arq_csv *csv) {
+    if (!csv) {
+        fprintf(stderr, "Erro ao acessar arquivo csv.\n");
+        return;
+    }
+
+    // Fecha o arquivo, se estiver aberto
+    if (csv->arquivo) {
+        fclose(csv->arquivo);
+    }
+
+    // Libera a matriz de strings
+    if (csv->matriz) {
+        for (unsigned long i = 0; i < csv->linhas; ++i) {
+            for (unsigned long j = 0; j < csv->colunas; ++j) {
+                free(csv->matriz[i][j]);
+            }
+            free(csv->matriz[i]);
+        }
+        free(csv->matriz);
+    }
+
+    // Libera o vetor de tamanhos das colunas
+    free(csv->sizes);
+
+    // Libera o vetor de tipos
+    free(csv->tipos);
+
+    // Libera a estrutura principal
+    free(csv);
+}
+
+
 // Funcao que limpa o buffer de memoria para as leituras com scanf
 void limparBuffer() {
     int c;
@@ -200,6 +233,14 @@ unsigned long *tamColunas(char ***copia, struct arq_csv *csv) {
     return tam;
 }
 
+void deletaTamColuna (struct arq_csv *csv,  unsigned long *size) {
+    if (!csv || !size) {
+        fprintf (stderr, "Erro ao tentar deletar o vetor de tamanho de colunas.\n");
+        exit(1);
+    }
+    free (size);
+}
+
 //Cria a variavel** que receberá o tamanho de cada coluna para que seja inserido espacos e a palavra indicada
 char **criaFormatacao(struct arq_csv *csv, unsigned long *sizes) {
     if (!csv) {
@@ -227,6 +268,19 @@ char **criaFormatacao(struct arq_csv *csv, unsigned long *sizes) {
     return formatacao;
 }
 
+void deletaFormatacao (struct arq_csv *csv, char **formatacao) {
+    if (!csv || !formatacao) {
+        fprintf (stderr, "Erro ao tentar deletar a formatacao das colunas.\n");
+        exit(1);
+    }   
+
+    for (int i = 0; i < csv->colunas; i++) {
+        free (formatacao[i]);
+    }
+    free (formatacao);
+
+}
+
 //Funcao responsavel por criar um vetor com o tamanho de colunas
 //Ajuda para escolher qual coluna sera imprimida (1 para sim  --- 0 para não)
 unsigned long *criaBitmapColunas(struct arq_csv *csv) {
@@ -243,8 +297,18 @@ unsigned long *criaBitmapColunas(struct arq_csv *csv) {
     return bitmapCol;
 }
 
+void deletaBitmapColunas(unsigned long *bitmapCol) {
+    if (!bitmapCol) {
+        fprintf(stderr, "Erro ao tentar deletar o vetor de bitmap.\n");
+        exit(1);
+    }
+
+    free(bitmapCol);
+}
+
+
 // Funcao faz a copia do arquivo csv para uma matriz***
-char ***copiaArquivo(struct arq_csv *csv) {
+char ***copiaArquivoNaMemoria(struct arq_csv *csv) {
     if (!csv || !csv->arquivo || csv->linhas <= 0 || csv->colunas <= 0) {
         fprintf(stderr, "Erro na copia do arquivo\n");
         return NULL;
@@ -266,7 +330,7 @@ char ***copiaArquivo(struct arq_csv *csv) {
         }
 
         colunas = 0;
-        keeper = separa(linha, ','); // Encontra a primeira palavra antes até o separador
+        keeper = separa(linha, ','); // Encontra a primeira palavra antes até do separador
         do {
             matriz[numLinhas][colunas] = strdup(keeper); // Copia essa palavra encontrada para a nova matriz criada
             if (!matriz[numLinhas][colunas])
@@ -313,12 +377,49 @@ void gravarMatriz(char ***matriz, unsigned long *bitMapCol, int linhas, int colu
 }
 
 void GravaMatrizNoArquivo(char ***matriz, unsigned long *bitmapCol, unsigned long linha, unsigned long coluna) {
-    char nomeArquivo[1024];
-    printf("Entre com o nome do arquivo: ");
-    scanf("%s", nomeArquivo);
-    gravarMatriz(matriz, bitmapCol, linha, coluna, nomeArquivo);
-    printf("Arquivo gravado com sucesso\n");
+    char tipoImpressao;
+
+    limparBuffer();
+    do {
+        printf("Deseja gravar um arquivo com as variaveis selecionadas? [S][N]: ");
+        scanf(" %c", &tipoImpressao);
+    } while (tipoImpressao != 'S' && tipoImpressao != 'N');
+
+    if (tipoImpressao == 'S') {
+                char nomeArquivo[1024];
+        printf("Entre com o nome do arquivo: ");
+        scanf("%s", nomeArquivo);
+        gravarMatriz(matriz, bitmapCol, linha, coluna, nomeArquivo);
+
+    }
+
 }
+//Deleta a matriz original e armazena os dados da matriz Copia
+void descartarDados(struct arq_csv *csv, char ***matrizCopia, unsigned long linhaAtualizada) {
+    char tipoImpressao;
+    limparBuffer();
+    do {
+        printf("Deseja descartar os dados originais? [S|N]: ");
+        scanf(" %c", &tipoImpressao);
+    } while (tipoImpressao != 'S' && tipoImpressao != 'N');
+
+    if (tipoImpressao == 'S') {
+        // Libera a matriz original
+        for (unsigned long i = 0; i < csv->linhas; ++i) {
+            for (unsigned long j = 0; j < csv->colunas; ++j) {
+                free(csv->matriz[i][j]);
+            }
+            free(csv->matriz[i]);
+        }
+        free(csv->matriz);
+
+        // Atribui a matriz copiada à estrutura csv
+        csv->matriz = matrizCopia;
+        csv->linhas = linhaAtualizada;
+    
+    }
+}
+
 
 
 // Funcao responsavel por imprimir pontos indicando um gap na impressao
@@ -355,17 +456,10 @@ void imprimeMatriz(struct arq_csv *csv, char ***matriz, unsigned long *bitmapCol
             cabecalho = 1;
         }
         else {
-            if (i < 6) {
-                printf("%d", i - 1);
-                for (int j = 0; j < contarDigitos(csv->linhas) - 1; j++)
-                    printf(" ");
-            }
-            else {
-                int diff = contarDigitos(csv->linhas) - contarDigitos(i);
-                printf("%d", i);
-                for (int j = 0; j < diff; j++)
-                    printf(" ");
-            }
+            int diff = contarDigitos(csv->linhas) - contarDigitos(i);
+            printf("%d", i);
+            for (int j = 0; j < diff; j++)
+                printf(" ");            
         }
         for (j = 0; j < csv->colunas; j++) {
             if (bitmapColunas[j] == 1) {
@@ -380,6 +474,10 @@ void imprimeMatriz(struct arq_csv *csv, char ***matriz, unsigned long *bitmapCol
         }
     }
     printf("\n[%ld rows x %ld columns]\n\n", csv->linhas, csv->colunas);
+
+    deletaFormatacao (csv, formatacao);
+    deletaTamColuna (csv, tam);
+
 }
 
 void imprimeMatrizAscendente(struct arq_csv *csv, char ***matriz, unsigned long *vetorPosicoes) {
@@ -420,57 +518,12 @@ void imprimeMatrizAscendente(struct arq_csv *csv, char ***matriz, unsigned long 
             imprimePontos(formatacao, csv, tam, csv->colunas, bitmapCol);
         }
     }
+
+    deletaBitmapColunas (bitmapCol);
+    deletaFormatacao (csv, formatacao);
+    deletaTamColuna (csv, tam);
 }
 
-void imprimeMatrizDecrescente(struct arq_csv *csv, char ***matriz, unsigned long *vetorPosicoes) {
-    char *palavra;
-    int i, j;
-    unsigned long *tam;
-    char **formatacao;
-    unsigned long *bitmapCol;
-
-    tam = tamColunas(matriz, csv);
-    formatacao = criaFormatacao(csv, tam);
-    bitmapCol = criaBitmapColunas(csv);
-
-    printf("%ld", vetorPosicoes[0]);
-    for (j = 0; j < contarDigitos(csv->linhas) - 1; j++)
-        printf(" ");
-    for (j = 0; j < csv->colunas; j++) {
-        if (bitmapCol[j] == 1)
-        {
-            palavra = formata(formatacao, tam[j], j, matriz[0][j]);
-            printf(" %s ", palavra);
-        }
-    }
-    printf("\n");
-
-    for (i = csv->linhas - 1; i >= 1; i--) {
-        if (i < 6) {
-            printf("%ld", vetorPosicoes[i]);
-            for (int j = 0; j < contarDigitos(csv->linhas) - contarDigitos(vetorPosicoes[i]); j++)
-                printf(" ");
-        }
-        else {
-            int diff = contarDigitos(csv->linhas) - contarDigitos(vetorPosicoes[i]);
-            printf("%ld", vetorPosicoes[i]);
-            for (int j = 0; j < diff; j++)
-                printf(" ");
-        }
-
-        for (j = 0; j < csv->colunas; j++) {
-            if (bitmapCol[j] == 1) {
-                palavra = formata(formatacao, tam[j], j, matriz[i][j]);
-                printf(" %s ", palavra);
-            }
-        }
-        printf("\n");
-        if (i == csv->linhas - 5 && csv->linhas > 10) {
-            i = 6;
-            imprimePontos(formatacao, csv, tam, csv->colunas, bitmapCol);
-        }
-    }
-}
 
 // retorna o numero de colunas do arquivo .csv
 struct arq_csv *contaColuna(struct arq_csv *csv) {
@@ -547,7 +600,7 @@ struct arq_csv *verificaCsv(struct arq_csv *csv) {
     }
     else
         csv->pos5 = 0;
-    csv->matriz = copiaArquivo(csv);
+    csv->matriz = copiaArquivoNaMemoria(csv);
     verificaTipoColuna(csv);
     return csv;
 }
@@ -602,8 +655,11 @@ void exibe(struct arq_csv *csv) {
     unsigned long *bitmapCol;
     bitmapCol = criaBitmapColunas(csv);
     imprimeMatriz(csv, csv->matriz, bitmapCol);
+    deletaBitmapColunas(bitmapCol);
     pressioneEnterParaContinuar();
 }
+
+//Operacoes que serão usados na opcao "Filtros"
 
 int igual (struct arq_csv *csv, char *valor1, char *valor2, unsigned long coluna) {
     if (!valor1 || !valor2) return 0;
@@ -677,6 +733,7 @@ int diferente (struct arq_csv *csv, char *valor1, char *valor2, unsigned long co
     }
 }
 
+//Funcao responsavel por realizar a comparacao dependendo de qual funcao por obtida pelo ponteiro de funcao
 int comparacao(struct arq_csv *csv, unsigned long var, int (*filtro)(struct arq_csv *csv, char *valor1, char *valor2, unsigned long coluna), char *elemento) {
     if (!csv) {
         fprintf (stderr, "Erro ao acessar o arquivo csv.\n");
@@ -689,12 +746,12 @@ int comparacao(struct arq_csv *csv, unsigned long var, int (*filtro)(struct arq_
     unsigned long *vetorLinha, *tam, *bitMapCol;
     unsigned long linhaFiltrada = 1;
     unsigned long k; 
-    char tipoImpressao;
-
+ 
     tam = tamColunas(csv->matriz, csv);
     formatacao = criaFormatacao(csv, tam);
     bitMapCol = criaBitmapColunas(csv);
 
+    //Laço responsavel por contar as linhas quando a comparacao for verdadeira
     for (int i = 1; i < csv->linhas; i++) {      
         if (filtro(csv, csv->matriz[i][var], elemento, var)) {           
             linhaFiltrada++; 
@@ -702,19 +759,22 @@ int comparacao(struct arq_csv *csv, unsigned long var, int (*filtro)(struct arq_
                    
     }
 
+    //vetor linha necessario para armazenar a linha original do arquivo
     vetorLinha = (unsigned long*) malloc (linhaFiltrada * sizeof (unsigned long));
     matrizCopia = (char***) malloc (linhaFiltrada * sizeof (char**));
     
     for (int i = 0; i < linhaFiltrada; i++) {
         vetorLinha[i] = 0;
     }
-    k  = 1;
+
+    k  = 1; //ignoramos a primeira linha do cabecalho
     for (int i = 1; i < csv->linhas; i++) {      
         if (filtro(csv, csv->matriz[i][var], elemento, var)) {
             vetorLinha[k++] = i;
         }                
     }
 
+    /*Criamos uma copia da matriz com base na linha obtida pelo vetorLinha*/
     for (int i = 0; i < linhaFiltrada; i++) {
         matrizCopia[i] = (char **)malloc(csv->colunas * sizeof(char *));
         for (int j = 0; j < csv->colunas; j++) {
@@ -722,6 +782,7 @@ int comparacao(struct arq_csv *csv, unsigned long var, int (*filtro)(struct arq_
         }
     }
 
+    //imprimeMatrizAscendente(csv, matrizCopia, vetorLinha);
 
     for (int i = 0; i < linhaFiltrada; i++) {
         int diff = contarDigitos(csv->linhas) - contarDigitos(vetorLinha[i]);
@@ -741,32 +802,15 @@ int comparacao(struct arq_csv *csv, unsigned long var, int (*filtro)(struct arq_
 
 
     printf("\n[%ld rows x %ld columns]\n", linhaFiltrada, csv->colunas);
-    limparBuffer();
-    do {
-        printf("Deseja gravar um arquivo com as variaveis selecionadas? [S][N]: ");
-        scanf(" %c", &tipoImpressao);
-    } while (tipoImpressao != 'S' && tipoImpressao != 'N');
+    GravaMatrizNoArquivo(matrizCopia, bitMapCol, linhaFiltrada, csv->colunas);
+    
 
-    if (tipoImpressao == 'S') {
-        GravaMatrizNoArquivo(matrizCopia, bitMapCol, linhaFiltrada, csv->colunas);
-    }
+    descartarDados(csv, matrizCopia, linhaFiltrada);
 
-    limparBuffer();
-    do {
-        printf("Deseja descartar os dados originais? [S|N]: ");
-        scanf(" %c", &tipoImpressao);
-    } while (tipoImpressao != 'S' && tipoImpressao != 'N');
-
-    if (tipoImpressao == 'S') {
-
-        bitMapCol = criaBitmapColunas(csv);
-        printf ("cheguei aqui1\n");
-        csv->matriz = matrizCopia;
-        printf ("cheguei aqui2\n");
-        csv->linhas = linhaFiltrada;
-            // destr2oiMatriz ();
-    }
-    imprimeMatriz(csv, csv->matriz, bitMapCol);
+    deletaBitmapColunas (bitMapCol);
+    deletaFormatacao (csv, formatacao);
+    deletaTamColuna (csv, tam);
+    free(vetorLinha);
     pressioneEnterParaContinuar();
     return 1;
 }
@@ -785,7 +829,6 @@ void filtros (struct arq_csv *csv) {
     coluna = encontraColuna(csv, nomeColuna);
     
     int (*funcao)(struct arq_csv *, char *, char *, unsigned long int) = NULL;
-
 
     if (strcmp(filtro, "==") == 0) {
         funcao = igual;
@@ -806,8 +849,6 @@ void filtros (struct arq_csv *csv) {
     else if (strcmp(filtro, "!=") == 0) {
         funcao = diferente;
     }
-    //printf ("cheguei aqui 1\n");
-    //printf ("Tamanho do filtro %ld\n", strlen(filtro));
     comparacao (csv, coluna, funcao, valor);
 }
 
@@ -832,6 +873,45 @@ struct dados_t *criaDado() {
     dados->vetorDados = NULL;
     return dados;
 }
+
+void deletaDado(struct dados_t *dados) {
+    if (!dados) {
+        fprintf(stderr, "Erro ao acessar struct dados_t.\n");
+        return;
+    }
+
+    // Libera a string moda
+    if (dados->moda) {
+        free(dados->moda);
+    }
+
+    // Libera a string min
+    if (dados->min) {
+        free(dados->min);
+    }
+
+    // Libera a string max
+    if (dados->max) {
+        free(dados->max);
+    }
+
+    // Libera cada string no vetor vetorDados
+    if (dados->vetorDados) {
+        for (unsigned long i = 0; i < dados->cont; i++) {
+            if (dados->vetorDados[i]) {
+                free(dados->vetorDados[i]);
+            }
+        }
+        // Libera o vetor vetorDados
+        free(dados->vetorDados);
+    }
+
+    // Libera a estrutura dados_t
+    free(dados);
+}
+
+
+
 
 // Funcao responsavel por ordenar uma matriz por meio de um vetor de posicoes
 // Somente é feito a comparacao na matriz. A troca de posicoes é feito no vetor enumerado com as linhas
@@ -908,8 +988,6 @@ void mergeSort(struct arq_csv *csv, unsigned long *vetorPos, int inicio, int fim
     }
 }
 
-
-
 void mergeVetor(struct arq_csv *csv, char **vetor, int inicio, int meio, int fim, unsigned long coluna) {
     int i, j, k;
     int n1 = meio - inicio + 1;
@@ -926,9 +1004,9 @@ void mergeVetor(struct arq_csv *csv, char **vetor, int inicio, int meio, int fim
         R[j] = vetor[meio + 1 + j];
 
     // Faz o merge dos vetores temporários de volta para o vetor principal
-    i = 0; // Índice inicial do primeiro subarray
-    j = 0; // Índice inicial do segundo subarray
-    k = inicio; // Índice inicial do vetor mesclado
+    i = 0; 
+    j = 0; 
+    k = inicio; 
     while (i < n1 && j < n2) {
         if (csv->tipos[coluna] == 'S') {
             if (strcmp(L[i], R[j]) <= 0) {
@@ -1021,7 +1099,7 @@ unsigned long somaLinhaInvalida (struct arq_csv *csv, unsigned long coluna) {
         if (strlen (csv->matriz[i][coluna]) != 0)
 		    somador ++;
 	}
-    printf ("O resultado de qtd da coluna %ld é: %ld\n", coluna, somador);
+    //printf ("O resultado de qtd da coluna %ld é: %ld\n", coluna, somador);
 	return somador;
 }
 
@@ -1176,7 +1254,7 @@ struct dados_t *analisaDadosNum(struct arq_csv *csv, char *var) {
         fprintf(stderr, "Erro ao analisar os dados\n");
         return NULL;
     }
-    int somador = 0;
+
     unsigned long k = 0;
     unsigned long i, coluna = 0;    
     struct dados_t *dados;
@@ -1185,24 +1263,26 @@ struct dados_t *analisaDadosNum(struct arq_csv *csv, char *var) {
 
     dados = criaDado();
     coluna = encontraColuna (csv, var);
+    printf ("Mix Max Media...\n");
 	maxMinMedia(dados, csv, coluna);
 
     dados->vetorDados = (char **) malloc(dados->cont * sizeof(char *));
-
+    printf ("Copiando Matriz...\n");
     k = 0;
     for (i = 1; i < csv->linhas; i++) {
         if (strlen(csv->matriz[i][coluna]) > 0) {
             dados->vetorDados[k++] = strdup(csv->matriz[i][coluna]);
         }
     }
-
-    //dados->cont = k;
-
-    mergeSortVetor(csv, dados->vetorDados, 0 , dados->cont - 1, coluna);
-    
+    printf ("Ordenando...\n");
+    mergeSortVetor(csv, dados->vetorDados, 0 , dados->cont - 1, coluna);  
+    printf ("Calculando a moda\n");  
     calculaModa (dados, csv);
+    printf ("Calculando o desvio\n");  
     dados->desvio = calculaDesvio (dados);
-    dados->mediana = calculaMediana (dados);
+    printf ("calculando a mediana\n");  
+    dados->mediana = calculaMediana (dados);  
+    printf ("retorna...\n");  
     return dados;
 }
 
@@ -1212,18 +1292,18 @@ struct dados_t *analisaDadoString(struct arq_csv *csv, char *var) {
         fprintf(stderr, "Erro ao analisar os dados\n");
         return NULL;
     }
-    int somador = 0;
     unsigned long k = 0;
-    unsigned long i, linhas = 0, coluna = 0;    
+    unsigned long i, coluna = 0;    
     struct dados_t *dados;
 
 
     dados = criaDado();
     coluna = encontraColuna (csv, var);
+    printf ("Somando linha valida\n");
     dados->cont = somaLinhaInvalida(csv, coluna);
 
     dados->vetorDados = (char **) malloc(dados->cont * sizeof(char *));
-
+    printf ("Copiando matriz...\n");
     k = 0;
     for (i = 1; i < csv->linhas; i++) {
         if (strlen(csv->matriz[i][coluna]) > 0) {
@@ -1232,10 +1312,11 @@ struct dados_t *analisaDadoString(struct arq_csv *csv, char *var) {
     }
 
     dados->cont = k;
-
-    mergeSortVetor(csv, dados->vetorDados, 0 , dados->cont - 1, coluna);
-    
+    printf ("Ordenando o vetor...\n");
+    mergeSortVetor(csv, dados->vetorDados, 0 , dados->cont - 1, coluna);    
+    printf ("calculando a moda...\n");
     calculaModa (dados, csv);
+    printf ("retorna...\n");
     return dados;
 }
 
@@ -1256,9 +1337,11 @@ void descricao_de_dados(struct arq_csv *csv) {
     }    
 
     imprimeDados(dados, csv, var);
+    deletaDado(dados);
     pressioneEnterParaContinuar();
 }
 
+//Vetor B recebe o Vetor A em ordem descrescente
 unsigned long* inverteVetor(unsigned long* vetorA, unsigned long linhas) {
     if (!vetorA) {
         fprintf(stderr, "Invalido. O vetor informado eh nulo.\n");
@@ -1272,22 +1355,38 @@ unsigned long* inverteVetor(unsigned long* vetorA, unsigned long linhas) {
     for (unsigned long i = 1; i < linhas; i++) {
         vetorB[i] = vetorA[linhas - i ];
     }
+    free (vetorA);
 
     return vetorB;
 }
 
+void deletaVetorLinha (unsigned long *vetorLinha) {
+    if (!vetorLinha) {
+        fprintf (stderr, "Erro deletar vetor de linhas.\n");
+        return;
+    }
+    free (vetorLinha);
+}
+
+//Funcao responsavel por ordenar a matriz conforme uma coluna
 void ordenacao(struct arq_csv *csv) {
     char var[1024];
     char tipoImpressao;
     short int posColuna = -1;
     char ***matrizCopia;
-    unsigned long *vetorPosicoes;
+    unsigned long *vetorPosicoes, *vetorB;
     unsigned long *bitmapCol;
 
     bitmapCol = criaBitmapColunas(csv);
     matrizCopia = (char ***)malloc(csv->linhas * sizeof(char **));
     if (!matrizCopia) {
         fprintf(stderr, "Erro ao alocar memoria para MatrizCopia\n");
+        return;
+    }
+
+    vetorPosicoes = (unsigned long *)malloc(csv->linhas * sizeof(unsigned long));
+    if (!vetorPosicoes) {
+        fprintf(stderr, "Erro ao alocar vetor de Posicoes\n");
         return;
     }
 
@@ -1302,18 +1401,14 @@ void ordenacao(struct arq_csv *csv) {
             }
         }
     }
-    limparBuffer();
 
+    limparBuffer();
     do {
         printf("Selecione uma opcao [A]scendente ou [D]escrescente: ");
         scanf(" %c", &tipoImpressao);
     } while (tipoImpressao != 'A' && tipoImpressao != 'D');
 
-    vetorPosicoes = (unsigned long *)malloc(csv->linhas * sizeof(unsigned long));
-    if (!vetorPosicoes) {
-        fprintf(stderr, "Erro ao alocar vetor de Posicoes\n");
-        return;
-    }
+
 
     for (int i = 0; i < csv->linhas; i++) {
         vetorPosicoes[i] = i;
@@ -1321,7 +1416,7 @@ void ordenacao(struct arq_csv *csv) {
 
     mergeSort(csv, vetorPosicoes, 1, csv->linhas - 1, csv->matriz, posColuna);
 
-    // Imprime Ascendente
+
     if (tipoImpressao == 'A') {
         for (int i = 0; i < csv->linhas; i++) {
             matrizCopia[i] = (char **) malloc(csv->colunas * sizeof(char *));
@@ -1332,45 +1427,27 @@ void ordenacao(struct arq_csv *csv) {
         imprimeMatrizAscendente(csv, matrizCopia, vetorPosicoes);
     }
     else if (tipoImpressao == 'D') {
-        unsigned long *vetorB = inverteVetor(vetorPosicoes, csv->linhas);
+        vetorB = inverteVetor(vetorPosicoes, csv->linhas);
         for (int i = 0; i < csv->linhas; i++) {
             matrizCopia[i] = (char **) malloc(csv->colunas * sizeof(char *));
             for (int j = 0; j < csv->colunas; j++) {
                 matrizCopia[i][j] = strdup(csv->matriz[vetorB[i]][j]);
             }
         }
-
         imprimeMatrizAscendente(csv, matrizCopia, vetorB);
     }
 
     printf("[%ld rows x %ld columns]\n\n", csv->linhas, csv->colunas);
-
-    limparBuffer();
-    do {
-        printf("Deseja gravar um arquivo com as variaveis selecionadas? [S][N]: ");
-        scanf(" %c", &tipoImpressao);
-    } while (tipoImpressao != 'S' && tipoImpressao != 'N');
-
-    if (tipoImpressao == 'S') {
-        GravaMatrizNoArquivo(matrizCopia, bitmapCol, csv->linhas, csv->colunas);
-    }
-
-    limparBuffer();
-    do {
-        printf("Deseja descartar os dados originais? [S|N]: ");
-        scanf(" %c", &tipoImpressao);
-    } while (tipoImpressao != 'S' && tipoImpressao != 'N');
-
-    if (tipoImpressao == 'S') {
-        csv->matriz = matrizCopia;
-        // destr2oiMatriz ();
-    }
-   
+    GravaMatrizNoArquivo(matrizCopia, bitmapCol, csv->linhas, csv->colunas);
+    descartarDados(csv, matrizCopia, csv->linhas);
+    deletaBitmapColunas (bitmapCol);
+    free(vetorB);
     pressioneEnterParaContinuar();
+
 }
 
 void selecao(struct arq_csv *csv) {
-    char tipoImpressao, var[1024];
+    char var[1024];
     int somador = 0;
     unsigned long *bitmapCol;
 
@@ -1380,8 +1457,6 @@ void selecao(struct arq_csv *csv) {
     var[strlen(var) + 1] = '\0';
 
     bitmapCol = criaBitmapColunas(csv);
-    // tam = tamColunas (csv->matriz, csv);
-    // formatacao = criaFormatacao(csv, tam);
 
     // Inicializa o bitmap
     for (int i = 0; i < csv->colunas; i++) {
@@ -1402,20 +1477,12 @@ void selecao(struct arq_csv *csv) {
     } while ((keeper = separa(keeper, ' ')) != NULL);
 
     imprimeMatriz(csv, csv->matriz, bitmapCol);
-    limparBuffer();
-    do {
-        printf("Deseja gravar um arquivo com as variaveis selecionadas? [S][N]: ");
-        scanf(" %c", &tipoImpressao);
-    } while (tipoImpressao != 'S' && tipoImpressao != 'N');
-
-    if (tipoImpressao == 'S') {
-        GravaMatrizNoArquivo(csv->matriz, bitmapCol, csv->linhas, csv->colunas);
-    }
+    GravaMatrizNoArquivo(csv->matriz, bitmapCol, csv->linhas, csv->colunas);
+    deletaBitmapColunas(bitmapCol);
     pressioneEnterParaContinuar();
 }
 
 void listarRegistrosNan(struct arq_csv *csv) {
-    char tipoImpressao;
     char *palavra;
     char ***copiaMatriz;
     unsigned long *bitMapCol;
@@ -1446,10 +1513,12 @@ void listarRegistrosNan(struct arq_csv *csv) {
         exit(1);
     }
 
+    //Inicializa o vetor de linhas em 0 (zero)
     for (int i = 0; i < contaLinhaNan; i++) {
         vetorLinha[i] = 0;
     }
 
+    //Vetor de linhas irá receber o numero da linha onde possui uma variavel NaN/vazia
     k = 1;
     for (int i = 1; i < csv->linhas; i++) {
         for (int j = 0; j < csv->colunas; j++) {
@@ -1461,6 +1530,7 @@ void listarRegistrosNan(struct arq_csv *csv) {
         }
     }
 
+    //Imprime
     for (int i = 0; i < contaLinhaNan; i++) {
         int diff = contarDigitos(csv->linhas) - contarDigitos(vetorLinha[i]);
         printf("%ld", vetorLinha[i]);
@@ -1492,6 +1562,7 @@ void listarRegistrosNan(struct arq_csv *csv) {
         }
     }
 
+    //A copia da matriz recebe as linhas onde possui um NaN/Vazio
     for (int i = 0; i < contaLinhaNan; i++) {
         for (int j = 0; j < csv->colunas; j++) {
             copiaMatriz[i][j] = strdup (csv->matriz[vetorLinha[i]][j]);
@@ -1499,34 +1570,16 @@ void listarRegistrosNan(struct arq_csv *csv) {
     }  
 
     printf("\n[%ld rows x %ld columns]\n", contaLinhaNan, csv->colunas);
-    limparBuffer();
-    do {
-        printf("Deseja gravar um arquivo com as variaveis selecionadas? [S][N]: ");
-        scanf(" %c", &tipoImpressao);
-    } while (tipoImpressao != 'S' && tipoImpressao != 'N');
 
-    if (tipoImpressao == 'S') {
-        GravaMatrizNoArquivo(copiaMatriz, bitMapCol,contaLinhaNan, csv->colunas);
-    }
-
-    limparBuffer();
-    do {
-        printf("Deseja descartar os dados originais? [S|N]: ");
-        scanf(" %c", &tipoImpressao);
-    } while (tipoImpressao != 'S' && tipoImpressao != 'N');
-
-    if (tipoImpressao == 'S') {
-
-        bitMapCol = criaBitmapColunas(csv);
-        printf ("cheguei aqui1\n");
-        csv->matriz = copiaMatriz;
-        printf ("cheguei aqui2\n");
-        csv->linhas = contaLinhaNan;
-            // destr2oiMatriz ();
-    }
-    imprimeMatriz(csv, csv->matriz, bitMapCol);
+    GravaMatrizNoArquivo(copiaMatriz, bitMapCol, contaLinhaNan, csv->colunas);
+    descartarDados(csv, copiaMatriz, contaLinhaNan);    
+    deletaBitmapColunas(bitMapCol);
+    deletaTamColuna(csv, tam);
+    deletaFormatacao(csv, formatacao);
+    free(vetorLinha);
     pressioneEnterParaContinuar();
 }
+
 
 void SubstituirPelaMedia(struct arq_csv *csv) {
     char **mediaString;
@@ -1559,65 +1612,38 @@ void SubstituirPelaMedia(struct arq_csv *csv) {
         }
     }
 
+
     // Preencher coordenadas vazias com a média da coluna
     for (int i = 0; i < csv->linhas; i++) {
         for (int j = 0; j < csv->colunas; j++) {
             if (strlen(csv->matriz[i][j]) == 0) {
-                //snprintf(csv->matriz[i][j], 1024, "%.1f", media[j]);
-                csv->matriz[i][j] = strdup (mediaString[j]);
+                // Verifica se a string já foi alocada antes de atribuir um novo valor
+                if (csv->matriz[i][j] != NULL) {
+                    free(csv->matriz[i][j]);
+                }
+                // Aloca memória para a nova string e copia o conteúdo
+                csv->matriz[i][j] = malloc(strlen(mediaString[j]) + 1);
+                if (csv->matriz[i][j] == NULL) {
+                    fprintf(stderr, "Erro ao alocar memória.\n");
+                    exit(1);
+                }
+                strcpy(csv->matriz[i][j], mediaString[j]);
             }
         }
     }
 
     bitmapCol = criaBitmapColunas(csv);
     imprimeMatriz(csv, csv->matriz, bitmapCol);
-
-    // Liberar memória alocada
-    /*free(mediaFloat);
-    
+    deletaBitmapColunas(bitmapCol);
     free(somador);
     free(qtdLinhasInvalidas);
-    free(bitmapCol);*/
-
-}
-
-/*void SubstituirPelaMedia(struct arq_csv *csv) {
-	struct dados_t **dados;
-	unsigned long *bitmapCol;
-	
-	bitmapCol = criaBitmapColunas (csv);
-    dados = (struct dados_t**) malloc(csv->colunas * sizeof(struct dados_t*));
-	
-	for (int i = 0; i < csv->colunas; i++) {
-		dados[i] = criaDado();
-	}	
-	
-	for (int i = 0; i < csv->colunas; i++) {
-		if (csv->tipos[i] == 'N')
-			bitmapCol[i] = 1;
-		else
-			bitmapCol[i] = 0;
-	}
-
- 	for (int i = 0; i < csv->colunas; i++) {
-		if (bitmapCol[i] == 1) {
-			dados[i] = analisaDados (csv, csv->matriz[0][i]);
-		}
-	}
-
-    for (int i = 0; i < csv->linhas; i++) {
-        for (int j = 0; j < csv->colunas; j++) {
-            if (strlen(csv->matriz[i][j]) == 0) {
-                sprintf(csv->matriz[i][j], "%.1f", dados[j]->media);;
-                //strcpy(csv->matriz[i][j],(char*)dados[j]->media);
-            }
-        }
+    free(mediaFloat);
+    // Liberar memória alocada para mediaString
+    for (int i = 0; i < csv->colunas; i++) {
+        free(mediaString[i]);
     }
-
-    bitmapCol = criaBitmapColunas(csv);
-    imprimeMatriz(csv, csv->matriz, bitmapCol);
- 
-}*/
+    free(mediaString);
+}
 
 void substituirValorValido (struct arq_csv *csv) {
     if (!csv) {
@@ -1629,17 +1655,28 @@ void substituirValorValido (struct arq_csv *csv) {
     
     for (int i = 0; i < csv->linhas; i++) {
         for (int j = 0; j < csv->colunas; j++) {
+            //confere se o campo é nulo e se a próxima linha possui valor disponível
             if (strlen(csv->matriz[i][j]) == 0 && i + 1 != csv->linhas && strlen(csv->matriz[i+1][j]) > 0) {
-                strcpy (csv->matriz[i][j],csv->matriz[i+1][j]);
+                // Libera memória se já foi alocada
+                if (csv->matriz[i][j] != NULL) {
+                    free(csv->matriz[i][j]);
+                }
+                // Aloca memória para a nova string e copia o conteúdo
+                csv->matriz[i][j] = malloc(strlen(csv->matriz[i+1][j]) + 1); // +1 para o caractere nulo
+                if (csv->matriz[i][j] == NULL) {
+                    fprintf(stderr, "Erro ao alocar memória.\n");
+                    exit(1);
+                }
+                strcpy(csv->matriz[i][j], csv->matriz[i+1][j]);
             }
         }
     }
 
     imprimeMatriz(csv, csv->matriz, bitMapCol);
+    deletaBitmapColunas(bitMapCol);
     pressioneEnterParaContinuar();
-
-
 }
+
 
 void removerRegistroNan(struct arq_csv *csv) {
     if (!csv) {
@@ -1653,6 +1690,7 @@ void removerRegistroNan(struct arq_csv *csv) {
     unsigned long i, j, k;
     unsigned long *bitMapCol = criaBitmapColunas(csv);
 
+    //Confire a quantidade de linhas validas
     for (i = 0; i < csv->linhas; i++) {
         valida = 1;
         for (j = 0; j < csv->colunas; j++) {
@@ -1672,15 +1710,15 @@ void removerRegistroNan(struct arq_csv *csv) {
     }
 
     k = 0;
-    for (i = 0; i < csv->linhas; i++) {
+    for (i = 0; i < csv->linhas; i++) {             
         valida = 1;
-        for (j = 0; j < csv->colunas; j++) {
+        for (j = 0; j < csv->colunas; j++) {    //confere se toda a linha é valida
             if (strlen(csv->matriz[i][j]) == 0) {
                 valida = 0;
                 break;
             }
         }
-        if (valida) {
+        if (valida) {   //atribui o valor na matriz
             matrizCopia[k] = (char **)malloc(csv->colunas * sizeof(char *));
             for (j = 0; j < csv->colunas; j++) {
                 matrizCopia[k][j] = strdup(csv->matriz[i][j]);
@@ -1690,24 +1728,23 @@ void removerRegistroNan(struct arq_csv *csv) {
     }
 
     // Libera a matriz original
-    /*for (i = 0; i < csv->linhas; i++) {
+    for (i = 0; i < csv->linhas; i++) {
         for (j = 0; j < csv->colunas; j++) {
             free(csv->matriz[i][j]);
         }
         free(csv->matriz[i]);
     }
-    free(csv->matriz);*/
+    free(csv->matriz);
 
     csv->matriz = matrizCopia;
     csv->linhas = linhaValida;
+    
 
-    // Liberar memória alocada para o bitmap de colunas (se necessário)
-    // liberaBitmapColunas(bitMapCol);
-
-    imprimeMatriz(csv,csv->matriz, bitMapCol);
+   //descartarDados(csv, matrizCopia, linhaValida);
+    imprimeMatriz(csv, csv->matriz, bitMapCol);
+    deletaBitmapColunas(bitMapCol);
 
 }
-
 
 void DadosFaltantes(struct arq_csv *csv) {
     int var;
@@ -1728,8 +1765,10 @@ void DadosFaltantes(struct arq_csv *csv) {
         break;
     case 3:
         substituirValorValido(csv);
+        break;
     case 4:
         removerRegistroNan(csv);
+        break;
     case 5:
         return;
     
@@ -1745,8 +1784,3 @@ void salvarDados(struct arq_csv *csv) {
     bitMapCol = criaBitmapColunas(csv);
     GravaMatrizNoArquivo(csv->matriz, bitMapCol, csv->linhas, csv->colunas);
 }
-
-/*void fim (csv) {
-    //liberar memoria
-
-}*/

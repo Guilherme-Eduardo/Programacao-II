@@ -15,6 +15,7 @@ void imprimeSumario (struct arq_csv *csv);
 int menuPrincipal();
 
 
+void deletaCsv (struct arq_csv *csv);
 void imprimeMatriz(struct arq_csv *csv, char ***matriz, unsigned long *bitmapColunas);
 char*** copiaArquivo (struct arq_csv *csv);
 void descricao_de_dados (struct arq_csv *csv);
