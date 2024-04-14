@@ -53,14 +53,13 @@ int main(int argc, char **argv) {
             case DADOS_FALTANTES:
                 DadosFaltantes(csv);
                 break;
-           /*case SALVAR_DADOS:
+            case SALVAR_DADOS:
                 salvarDados(csv);
-                break;*/
+                break;
             case FIM:
                 deletaCsv(csv);
                 break;
         }
     }    
     return 0;
-}
-       
+}      
